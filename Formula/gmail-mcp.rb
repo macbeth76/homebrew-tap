@@ -6,7 +6,7 @@ class GmailMcp < Formula
   # release, cut a tag in google-mcp (e.g. `git tag v1.0.0 && git push --tags`);
   # the workflow publishes the asset below and opens a PR to fill the sha256.
   url "https://github.com/macbeth76/google-mcp/releases/download/v1.0.0/gmail-mcp-1.0.0.tgz"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  sha256 "b3c31277a20b25a50dda7c734c3328e39a52be6999546e907dc1c30ac91b863e"
   version "1.0.0"
   license "MIT"
 
