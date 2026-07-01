@@ -1,3 +1,59 @@
+require "download_strategy"
+
+# Downloads a release asset from a PRIVATE GitHub repository via the REST API.
+# Requires HOMEBREW_GITHUB_API_TOKEN with read access to the repo. The token is
+# sent only to api.github.com; curl strips the Authorization header when GitHub
+# redirects to the (already-signed) asset storage host, so it never leaks.
+class GitHubPrivateReleaseDownloadStrategy < CurlDownloadStrategy
+  def initialize(url, name, version, **meta)
+    super
+    parse_url_pattern
+  end
+
+  def parse_url_pattern
+    pattern = %r{https://github\.com/([^/]+)/([^/]+)/releases/download/([^/]+)/(\S+)}
+    match = @url.match(pattern)
+    raise CurlDownloadStrategyError, "Invalid GitHub release URL: #{@url}" unless match
+
+    _, @owner, @repo, @tag, @filename = *match
+  end
+
+  private
+
+  def _fetch(url:, resolved_url:, timeout:)
+    token = ENV.fetch("HOMEBREW_GITHUB_API_TOKEN", nil)
+    if token.nil? || token.empty?
+      raise CurlDownloadStrategyError, <<~EOS
+        HOMEBREW_GITHUB_API_TOKEN is required to download #{@filename} from the
+        private repository #{@owner}/#{@repo}. Provide a GitHub token with read
+        access to that repository.
+      EOS
+    end
+
+    curl_download(
+      "https://api.github.com/repos/#{@owner}/#{@repo}/releases/assets/#{asset_id}",
+      "--header", "Accept: application/octet-stream",
+      "--header", "Authorization: token #{token}",
+      to:           temporary_path,
+      try_partial:  @try_partial,
+      timeout:,
+    )
+  end
+
+  def asset_id
+    @asset_id ||= begin
+      require "utils/github"
+      release = GitHub::API.open_rest(
+        "https://api.github.com/repos/#{@owner}/#{@repo}/releases/tags/#{@tag}",
+      )
+      asset = release.fetch("assets", []).find { |a| a["name"] == @filename }
+      raise CurlDownloadStrategyError, "No asset named #{@filename} in release #{@tag}." if asset.nil?
+
+      asset.fetch("id")
+    end
+  end
+end
+
 class GmailMcp < Formula
   desc "Gmail MCP server (stdio + Streamable HTTP transports)"
   homepage "https://github.com/macbeth76/google-mcp"
@@ -5,7 +61,8 @@ class GmailMcp < Formula
   # google-mcp "Release (Homebrew artifact)" workflow. For the very first
   # release, cut a tag in google-mcp (e.g. `git tag v1.0.0 && git push --tags`);
   # the workflow publishes the asset below and opens a PR to fill the sha256.
-  url "https://github.com/macbeth76/google-mcp/releases/download/v1.0.0/gmail-mcp-1.0.0.tgz"
+  url "https://github.com/macbeth76/google-mcp/releases/download/v1.0.0/gmail-mcp-1.0.0.tgz",
+      using: GitHubPrivateReleaseDownloadStrategy
   sha256 "b3c31277a20b25a50dda7c734c3328e39a52be6999546e907dc1c30ac91b863e"
   version "1.0.0"
   license "MIT"
